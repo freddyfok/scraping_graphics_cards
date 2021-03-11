@@ -2,16 +2,22 @@
 Webscraping script for canada computers
 """
 import argparse
+from dataclasses import dataclass
 from email.message import EmailMessage
 from time import sleep
-from bs4 import BeautifulSoup
 from smtplib import SMTP_SSL
+from bs4 import BeautifulSoup
 import requests
 
 
+@dataclass
+class HtmlTag:
+    name_tag: str
+    class_tag: str
+
+
 def find_item_status(
-        item_url: str, available_html_name_tag: str, available_html_class_tag: str
-        , unavailable_status: str, item_html_name_tag: str, item_html_class_tag: str
+        item_url: str, availability_tag: HtmlTag, unavailable_status: str, item_tag: HtmlTag
 ):
     """
     Finds the availability status of the item
@@ -19,9 +25,13 @@ def find_item_status(
     """
     page = requests.get(item_url).text
     parsed_page = BeautifulSoup(page, "lxml")
-    availability = parsed_page.find(available_html_name_tag, class_=available_html_class_tag).text
-    item_name = parsed_page.find(item_html_name_tag, class_=item_html_class_tag).text
-    return False if unavailable_status in availability else True, item_name
+    availability = search_page(parsed_page, availability_tag).casefold()
+    item_name = search_page(parsed_page, item_tag)
+    return True if unavailable_status.casefold() not in availability else False, item_name
+
+
+def search_page(parsed_page: BeautifulSoup, tag: HtmlTag):
+    return parsed_page.find(tag.name_tag, class_=tag.class_tag).text
 
 
 def send_notification_to_self(email: str, password: str, item: str):
@@ -44,11 +54,9 @@ def send_notification_to_self(email: str, password: str, item: str):
 
 
 def main():
-    AVAILABILITY_HTML_NAME_TAG = "div"
-    AVAILABILITY_HTML_CLASS_TAG = "pi-prod-availability"
-    UNAVAILABLE_STATUS = "Not Available Online"
-    ITEM_HTML_NAME_TAG = "h1"
-    ITEM_HTML_CLASS_TAG = "h3 mb-0"
+    available_tag = HtmlTag("div", "pi-prod-availability")
+    item_tag = HtmlTag("h1", "h3 mb-0")
+    unavailable_status = "Not Available Online"
 
     parser = argparse.ArgumentParser(description="Script to scrape canada computers")
     parser.add_argument("email", help="Email address to send from", type=str)
@@ -61,9 +69,9 @@ def main():
     while not success:
         sleep(60)
         success, item_name = find_item_status(
-                args.item_url, AVAILABILITY_HTML_NAME_TAG, AVAILABILITY_HTML_CLASS_TAG
-                , UNAVAILABLE_STATUS, ITEM_HTML_NAME_TAG, ITEM_HTML_CLASS_TAG
+            args.item_url, available_tag, unavailable_status, item_tag
         )
+        print(success)
 
     send_notification_to_self(args.email, args.password, item_name)
 
